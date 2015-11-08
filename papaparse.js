@@ -615,6 +615,7 @@ var fs = require('fs');
       stream = input;
       stream.on('error', function(error) {
         t._sendError(error);
+        throw error;
       });
       stream.on('end', function() {
         t._finished = true;
@@ -630,7 +631,7 @@ var fs = require('fs');
       }
       chunk = stream.read(this._config.chunkSize);
       if (chunk)
-        return this.parseChunk(chunk);
+        return setImmediate(this.parseChunk.bind(this), chunk);
       return setImmediate(this._nextChunk.bind(this));
     }
   }
