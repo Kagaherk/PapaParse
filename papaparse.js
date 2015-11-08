@@ -3,6 +3,9 @@
 	v4.1.2
 	https://github.com/mholt/PapaParse
 */
+
+var fs = require('fs');
+
 (function(global)
 {
 	'use strict';
@@ -208,6 +211,8 @@
 			else
 				streamer = new StringStreamer(_config);
 		}
+    else if (_config.streaming)
+      streamer = new StreamStreamer(_config);
 		else if ((global.File && _input instanceof File) || _input instanceof Object)	// ...Safari. (see issue #106)
 			streamer = new FileStreamer(_config);
 
@@ -594,6 +599,43 @@
 	}
 	NetworkStreamer.prototype = Object.create(ChunkStreamer.prototype);
 	NetworkStreamer.prototype.constructor = NetworkStreamer;
+
+
+  function StreamStreamer(config)
+  {
+    config = config || {};
+    if (!config.chunkSize)
+      config.chunkSize = Papa.LocalChunkSize;
+    ChunkStreamer.call(this, config);
+
+    var stream, chunk;
+    this.stream = function(input)
+    {
+      var t = this;
+      stream = input;
+      stream.on('error', function(error) {
+        t._sendError(error);
+      });
+      stream.on('end', function() {
+        t._finished = true;
+      });
+      this._nextChunk();  // Starts streaming
+    }
+    this._nextChunk = function()
+    {
+      if (this._finished) {
+        if (this._partialLine.length > 0)
+          this.parseChunk();
+        return;
+      }
+      chunk = stream.read(this._config.chunkSize);
+      if (chunk)
+        return this.parseChunk(chunk);
+      return setImmediate(this._nextChunk.bind(this));
+    }
+  }
+  StreamStreamer.prototype = Object.create(ChunkStreamer.prototype);
+  StreamStreamer.prototype.constructor = StreamStreamer;
 
 
 	function FileStreamer(config)
