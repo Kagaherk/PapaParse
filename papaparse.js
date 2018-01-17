@@ -936,7 +936,7 @@ var fs = require('fs');
 		function guessDelimiter(input)
 		{
 			var delimChoices = [',', '\t', '|', ';', '§', Papa.RECORD_SEP, Papa.UNIT_SEP];
-			var bestDelim, bestDelta, fieldCountPrevRow;
+			var bestDelim, bestDelta, bestAvgFieldCount, fieldCountPrevRow;
 
 			for (var i = 0; i < delimChoices.length; i++)
 			{
@@ -969,11 +969,12 @@ var fs = require('fs');
 				if (preview.data.length > 0)
 					avgFieldCount /= preview.data.length;
 
-				if ((typeof bestDelta === 'undefined' || delta < bestDelta)
+				if ((typeof bestDelta === 'undefined' || delta < bestDelta || (delta === bestDelta && avgFieldCount > bestAvgFieldCount))
 					&& avgFieldCount > 1.99)
 				{
 					bestDelta = delta;
 					bestDelim = delim;
+          bestAvgFieldCount = avgFieldCount;
 				}
 			}
 
