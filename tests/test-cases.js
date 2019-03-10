@@ -1,21 +1,24 @@
+var chai;
+var Papa;
 if (typeof module !== 'undefined' && module.exports) {
-	var chai = require('chai');
-	var Papa = require('../papaparse.js');
+	chai = require('chai');
+	Papa = require('../papaparse.js');
 }
 
 var assert = chai.assert;
 
+var BASE_PATH = (typeof document === 'undefined') ? './' : document.getElementById('test-cases').src.replace(/test-cases\.js$/, '');
 var RECORD_SEP = String.fromCharCode(30);
 var UNIT_SEP = String.fromCharCode(31);
 var FILES_ENABLED = false;
 try {
-	new File([""], "");
+	new File([""], ""); // eslint-disable-line no-new
 	FILES_ENABLED = true;
 } catch (e) {} // safari, ie
 
 var XHR_ENABLED = false;
 try {
-	new XMLHttpRequest();
+	new XMLHttpRequest(); // eslint-disable-line no-new
 	XHR_ENABLED = true;
 } catch (e) {} // safari, ie
 
@@ -47,10 +50,10 @@ var CORE_PARSER_TESTS = [
 	},
 	{
 		description: "Whitespace at edges of unquoted field",
-		input: 'a,  b ,c',
+		input: 'a,	b ,c',
 		notes: "Extra whitespace should graciously be preserved",
 		expected: {
-			data: [['a', '  b ', 'c']],
+			data: [['a', '	b ', 'c']],
 			errors: []
 		}
 	},
@@ -196,6 +199,123 @@ var CORE_PARSER_TESTS = [
 		}
 	},
 	{
+		description: "Quoted field has invalid trailing quote after delimiter with a valid closer",
+		input: '"a,"b,c"\nd,e,f',
+		notes: "The input is malformed, opening quotes identified, trailing quote is malformed. Trailing quote should be escaped or followed by valid new line or delimiter to be valid",
+		expected: {
+			data: [['a,"b,c'], ['d', 'e', 'f']],
+			errors: [{
+				"type": "Quotes",
+				"code": "InvalidQuotes",
+				"message": "Trailing quote on quoted field is malformed",
+				"row": 0,
+				"index": 1
+			}]
+		}
+	},
+	{
+		description: "Quoted field has invalid trailing quote after delimiter",
+		input: 'a,"b,"c\nd,e,f',
+		notes: "The input is malformed, opening quotes identified, trailing quote is malformed. Trailing quote should be escaped or followed by valid new line or delimiter to be valid",
+		expected: {
+			data: [['a', 'b,"c\nd,e,f']],
+			errors: [{
+				"type": "Quotes",
+				"code": "InvalidQuotes",
+				"message": "Trailing quote on quoted field is malformed",
+				"row": 0,
+				"index": 3
+			},
+			{
+				"type": "Quotes",
+				"code": "MissingQuotes",
+				"message": "Quoted field unterminated",
+				"row": 0,
+				"index": 3
+			}]
+		}
+	},
+	{
+		description: "Quoted field has invalid trailing quote before delimiter",
+		input: 'a,"b"c,d\ne,f,g',
+		notes: "The input is malformed, opening quotes identified, trailing quote is malformed. Trailing quote should be escaped or followed by valid new line or delimiter to be valid",
+		expected: {
+			data: [['a', 'b"c,d\ne,f,g']],
+			errors: [{
+				"type": "Quotes",
+				"code": "InvalidQuotes",
+				"message": "Trailing quote on quoted field is malformed",
+				"row": 0,
+				"index": 3
+			},
+			{
+				"type": "Quotes",
+				"code": "MissingQuotes",
+				"message": "Quoted field unterminated",
+				"row": 0,
+				"index": 3
+			}]
+		}
+	},
+	{
+		description: "Quoted field has invalid trailing quote after new line",
+		input: 'a,"b,c\nd"e,f,g',
+		notes: "The input is malformed, opening quotes identified, trailing quote is malformed. Trailing quote should be escaped or followed by valid new line or delimiter to be valid",
+		expected: {
+			data: [['a', 'b,c\nd"e,f,g']],
+			errors: [{
+				"type": "Quotes",
+				"code": "InvalidQuotes",
+				"message": "Trailing quote on quoted field is malformed",
+				"row": 0,
+				"index": 3
+			},
+			{
+				"type": "Quotes",
+				"code": "MissingQuotes",
+				"message": "Quoted field unterminated",
+				"row": 0,
+				"index": 3
+			}]
+		}
+	},
+	{
+		description: "Quoted field has valid trailing quote via delimiter",
+		input: 'a,"b",c\nd,e,f',
+		notes: "Trailing quote is valid due to trailing delimiter",
+		expected: {
+			data: [['a', 'b', 'c'], ['d', 'e', 'f']],
+			errors: []
+		}
+	},
+	{
+		description: "Quoted field has valid trailing quote via \\n",
+		input: 'a,b,"c"\nd,e,f',
+		notes: "Trailing quote is valid due to trailing new line delimiter",
+		expected: {
+			data: [['a', 'b', 'c'], ['d', 'e', 'f']],
+			errors: []
+		}
+	},
+	{
+		description: "Quoted field has valid trailing quote via EOF",
+		input: 'a,b,c\nd,e,"f"',
+		notes: "Trailing quote is valid due to EOF",
+		expected: {
+			data: [['a', 'b', 'c'], ['d', 'e', 'f']],
+			errors: []
+		}
+	},
+	{
+		description: "Quoted field contains delimiters and \\n with valid trailing quote",
+		input: 'a,"b,c\nd,e,f"',
+		notes: "Trailing quote is valid due to trailing delimiter",
+		expected: {
+			data: [['a', 'b,c\nd,e,f']],
+			errors: []
+		}
+	},
+	{
 		description: "Line starts with quoted field",
 		input: 'a,b,c\n"d",e,f',
 		expected: {
@@ -212,6 +332,17 @@ var CORE_PARSER_TESTS = [
 		}
 	},
 	{
+		description: "Line ends with quoted field, first field of next line is empty, \\n",
+		input: 'a,b,c\n,e,f\n,"h","i"\n,"k","l"',
+		config: {
+			newline: '\n',
+		},
+		expected: {
+			data: [['a', 'b', 'c'], ['', 'e', 'f'], ['', 'h', 'i'], ['', 'k', 'l']],
+			errors: []
+		}
+	},
+	{
 		description: "Quoted field at end of row (but not at EOF) has quotes",
 		input: 'a,b,"c""c"""\nd,e,f',
 		expected: {
@@ -219,14 +350,14 @@ var CORE_PARSER_TESTS = [
 			errors: []
 		}
 	},
-  {
-    description: "Empty quoted field at EOF is empty",
-    input: 'a,b,""\na,b,""',
-    expected: {
-      data: [['a', 'b', ''], ['a', 'b', '']],
-      errors: []
-    }
-  },
+	{
+		description: "Empty quoted field at EOF is empty",
+		input: 'a,b,""\na,b,""',
+		expected: {
+			data: [['a', 'b', ''], ['a', 'b', '']],
+			errors: []
+		}
+	},
 	{
 		description: "Multiple consecutive empty fields",
 		input: 'a,b,,,c,d\n,,e,,,f',
@@ -508,6 +639,38 @@ var PARSE_TESTS = [
 		}
 	},
 	{
+		description: "Quoted fields with spaces between closing quote and next delimiter",
+		input: 'A,"B" ,C,D\r\nE,F,"G"  ,H',
+		expected: {
+			data: [['A', 'B', 'C','D'],['E', 'F', 'G','H']],
+			errors: []
+		}
+	},
+	{
+		description: "Quoted fields with spaces between closing quote and next new line",
+		input: 'A,B,C,"D" \r\nE,F,G,"H"  \r\nQ,W,E,R',
+		expected: {
+			data: [['A', 'B', 'C','D'],['E', 'F', 'G','H'],['Q', 'W', 'E','R']],
+			errors: []
+		}
+	},
+	{
+		description: "Quoted fields with spaces after closing quote",
+		input: 'A,"B" ,C,"D" \r\nE,F,"G"  ,"H"  \r\nQ,W,"E" ,R',
+		expected: {
+			data: [['A', 'B', 'C','D'],['E', 'F', 'G','H'],['Q', 'W', 'E','R']],
+			errors: []
+		}
+	},
+	{
+		description: "Mixed slash n and slash r should choose first as precident",
+		input: 'a,b,c\nd,e,f\rg,h,i\n',
+		expected: {
+			data: [['a', 'b', 'c'], ['d', 'e', 'f\rg', 'h', 'i'], ['']],
+			errors: []
+		}
+	},
+	{
 		description: "Header row with one row of data",
 		input: 'A,B,C\r\na,b,c',
 		config: { header: true },
@@ -563,6 +726,31 @@ var PARSE_TESTS = [
 		}
 	},
 	{
+		description: "Header rows are transformed when transformHeader function is provided",
+		input: 'A,B,C\r\na,b,c',
+		config: { header: true, transformHeader: function(header) { return header.toLowerCase(); } },
+		expected: {
+			data: [{"a": "a", "b": "b", "c": "c"}],
+			errors: []
+		}
+	},
+	{
+		description: "Line ends with quoted field, first field of next line is empty using headers",
+		input: 'a,b,"c"\r\nd,e,"f"\r\n,"h","i"\r\n,"k","l"',
+		config: {
+			header: true,
+			newline: '\r\n',
+		},
+		expected: {
+			data: [
+				{a: 'd', b: 'e', c: 'f'},
+				{a: '', b: 'h', c: 'i'},
+				{a: '', b: 'k', c: 'l'}
+			],
+			errors: []
+		}
+	},
+	{
 		description: "Tab delimiter",
 		input: 'a\tb\tc\r\nd\te\tf',
 		config: { delimiter: "\t" },
@@ -582,7 +770,7 @@ var PARSE_TESTS = [
 	},
 	{
 		description: "ASCII 30 delimiter",
-		input: 'a'+RECORD_SEP+'b'+RECORD_SEP+'c\r\nd'+RECORD_SEP+'e'+RECORD_SEP+'f',
+		input: 'a' + RECORD_SEP + 'b' + RECORD_SEP + 'c\r\nd' + RECORD_SEP + 'e' + RECORD_SEP + 'f',
 		config: { delimiter: RECORD_SEP },
 		expected: {
 			data: [['a', 'b', 'c'], ['d', 'e', 'f']],
@@ -591,7 +779,7 @@ var PARSE_TESTS = [
 	},
 	{
 		description: "ASCII 31 delimiter",
-		input: 'a'+UNIT_SEP+'b'+UNIT_SEP+'c\r\nd'+UNIT_SEP+'e'+UNIT_SEP+'f',
+		input: 'a' + UNIT_SEP + 'b' + UNIT_SEP + 'c\r\nd' + UNIT_SEP + 'e' + UNIT_SEP + 'f',
 		config: { delimiter: UNIT_SEP },
 		expected: {
 			data: [['a', 'b', 'c'], ['d', 'e', 'f']],
@@ -612,6 +800,15 @@ var PARSE_TESTS = [
 		description: "Multi-character delimiter",
 		input: 'a, b, c',
 		config: { delimiter: ", " },
+		expected: {
+			data: [['a', 'b', 'c']],
+			errors: []
+		}
+	},
+	{
+		description: "Callback delimiter",
+		input: 'a$ b$ c',
+		config: { delimiter: function(input) { return input[1] + ' '; } },
 		expected: {
 			data: [['a', 'b', 'c']],
 			errors: []
@@ -641,6 +838,120 @@ var PARSE_TESTS = [
 		config: { dynamicTyping: true },
 		expected: {
 			data: [["A", "B", "C"], ["undefined", "null", "["], ["var", "float", "if"]],
+			errors: []
+		}
+	},
+	{
+		description: "Dynamic typing applies to specific columns",
+		input: 'A,B,C\r\n1,2.2,1e3\r\n-4,-4.5,-4e-5',
+		config: { header: true, dynamicTyping: { A: true, C: true } },
+		expected: {
+			data: [{"A": 1, "B": "2.2", "C": 1000}, {"A": -4, "B": "-4.5", "C": -0.00004}],
+			errors: []
+		}
+	},
+	{
+		description: "Dynamic typing applies to specific columns by index",
+		input: '1,2.2,1e3\r\n-4,-4.5,-4e-5\r\n-,5a,5-2',
+		config: { dynamicTyping: { 1: true } },
+		expected: {
+			data: [["1", 2.2, "1e3"], ["-4", -4.5, "-4e-5"], ["-", "5a", "5-2"]],
+			errors: []
+		}
+	},
+	{
+		description: "Dynamic typing can be applied to `__parsed_extra`",
+		input: 'A,B,C\r\n1,2.2,1e3,5.5\r\n-4,-4.5,-4e-5',
+		config: { header: true, dynamicTyping: { A: true, C: true, __parsed_extra: true } },
+		expected: {
+			data: [{"A": 1, "B": "2.2", "C": 1000, "__parsed_extra": [5.5]}, {"A": -4, "B": "-4.5", "C": -0.00004}],
+			errors: [{
+				"type": "FieldMismatch",
+				"code": "TooManyFields",
+				"message": "Too many fields: expected 3 fields but parsed 4",
+				"row": 0
+			}]
+		}
+	},
+	{
+		description: "Dynamic typing by indices can be determined by function",
+		input: '001,002,003',
+		config: { dynamicTyping: function(field) { return (field % 2) === 0; } },
+		expected: {
+			data: [[1, "002", 3]],
+			errors: []
+		}
+	},
+	{
+		description: "Dynamic typing by headers can be determined by function",
+		input: 'A_as_int,B,C_as_int\r\n001,002,003',
+		config: { header: true, dynamicTyping: function(field) { return /_as_int$/.test(field); } },
+		expected: {
+			data: [{"A_as_int": 1, "B": "002", "C_as_int": 3}],
+			errors: []
+		}
+	},
+	{
+		description: "Dynamic typing converts empty values into NULL",
+		input: '1,2.2,1e3\r\n,NULL,\r\n-,5a,null',
+		config: { dynamicTyping: true },
+		expected: {
+			data: [[1, 2.2, 1000], [null, "NULL", null], ["-", "5a", "null"]],
+			errors: []
+		}
+	},
+	{
+		description: "Custom transform function is applied to values",
+		input: 'A,B,C\r\nd,e,f',
+		config: {
+			transform: function(value) {
+				return value.toLowerCase();
+			}
+		},
+		expected: {
+			data: [["a","b","c"], ["d","e","f"]],
+			errors: []
+		}
+	},
+	{
+		description: "Custom transform accepts column number also",
+		input: 'A,B,C\r\nd,e,f',
+		config: {
+			transform: function(value, column) {
+				if (column % 2) {
+					value = value.toLowerCase();
+				}
+				return value;
+			}
+		},
+		expected: {
+			data: [["A","b","C"], ["d","e","f"]],
+			errors: []
+		}
+	},
+	{
+		description: "Custom transform accepts header name when using header",
+		input: 'A,B,C\r\nd,e,f',
+		config: {
+			header: true,
+			transform: function(value, name) {
+				if (name === 'B') {
+					value = value.toUpperCase();
+				}
+				return value;
+			}
+		},
+		expected: {
+			data: [{'A': "d", 'B': "E", 'C': "f"}],
+			errors: []
+		}
+	},
+	{
+		description: "Dynamic typing converts ISO date strings to Dates",
+		input: 'ISO date,long date\r\n2018-05-04T21:08:03.269Z,Fri May 04 2018 14:08:03 GMT-0700 (PDT)\r\n2018-05-08T15:20:22.642Z,Tue May 08 2018 08:20:22 GMT-0700 (PDT)',
+		config: { dynamicTyping: true },
+		expected: {
+			data: [["ISO date", "long date"], [new Date("2018-05-04T21:08:03.269Z"), "Fri May 04 2018 14:08:03 GMT-0700 (PDT)"], [new Date("2018-05-08T15:20:22.642Z"), "Tue May 08 2018 08:20:22 GMT-0700 (PDT)"]],
 			errors: []
 		}
 	},
@@ -851,6 +1162,262 @@ var PARSE_TESTS = [
 			data: [[" "], ['a', 'b', 'c']],
 			errors: []
 		}
+	},
+	{
+		description: "Skip empty lines while detecting delimiter",
+		notes: "Parsing correctly newline-terminated short data with delimiter:auto and skipEmptyLines:true",
+		input: 'a,b\n1,2\n3,4\n',
+		config: { header: true, skipEmptyLines: true },
+		expected: {
+			data: [{'a': '1', 'b': '2'}, {'a': '3', 'b': '4'}],
+			errors: []
+		}
+	},
+	{
+		description: "Lines with comments are not used when guessing the delimiter in an escaped file",
+		notes: "Guessing the delimiter should work even if there are many lines of comments at the start of the file",
+		input: '#1\n#2\n#3\n#4\n#5\n#6\n#7\n#8\n#9\n#10\none,"t,w,o",three\nfour,five,six',
+		config: { comments: '#' },
+		expected: {
+			data: [['one','t,w,o','three'],['four','five','six']],
+			errors: []
+		}
+	},
+	{
+		description: "Lines with comments are not used when guessing the delimiter in a non-escaped file",
+		notes: "Guessing the delimiter should work even if there are many lines of comments at the start of the file",
+		input: '#1\n#2\n#3\n#4\n#5\n#6\n#7\n#8\n#9\n#10\n#11\none,two,three\nfour,five,six',
+		config: { comments: '#' },
+		expected: {
+			data: [['one','two','three'],['four','five','six']],
+			errors: []
+		}
+	},
+	{
+		description: "Pipe delimiter is guessed correctly when mixed with comas",
+		notes: "Guessing the delimiter should work even if there are many lines of comments at the start of the file",
+		input: 'one|two,two|three\nfour|five,five|six',
+		config: {},
+		expected: {
+			data: [['one','two,two','three'],['four','five,five','six']],
+			errors: []
+		}
+	},
+	{
+		description: "Single quote as quote character",
+		notes: "Must parse correctly when single quote is specified as a quote character",
+		input: "a,b,'c,d'",
+		config: { quoteChar: "'" },
+		expected: {
+			data: [['a', 'b', 'c,d']],
+			errors: []
+		}
+	},
+	{
+		description: "Custom escape character in the middle",
+		notes: "Must parse correctly if the backslash sign (\\) is configured as a custom escape character",
+		input: 'a,b,"c\\"d\\"f"',
+		config: { escapeChar: '\\' },
+		expected: {
+			data: [['a', 'b', 'c"d"f']],
+			errors: []
+		}
+	},
+	{
+		description: "Custom escape character at the end",
+		notes: "Must parse correctly if the backslash sign (\\) is configured as a custom escape character and the escaped quote character appears at the end of the column",
+		input: 'a,b,"c\\"d\\""',
+		config: { escapeChar: '\\' },
+		expected: {
+			data: [['a', 'b', 'c"d"']],
+			errors: []
+		}
+	},
+	{
+		description: "Custom escape character not used for escaping",
+		notes: "Must parse correctly if the backslash sign (\\) is configured as a custom escape character and appears as regular character in the text",
+		input: 'a,b,"c\\d"',
+		config: { escapeChar: '\\' },
+		expected: {
+			data: [['a', 'b', 'c\\d']],
+			errors: []
+		}
+	},
+	{
+		description: "Header row with preceding comment",
+		notes: "Must parse correctly headers if they are preceded by comments",
+		input: '#Comment\na,b\nc,d\n',
+		config: { header: true, comments: '#', skipEmptyLines: true, delimiter: ',' },
+		expected: {
+			data: [{'a': 'c', 'b': 'd'}],
+			errors: []
+		}
+	},
+	{
+		description: "Carriage return in header inside quotes, with line feed endings",
+		input: '"a\r\na","b"\n"c","d"\n"e","f"\n"g","h"\n"i","j"',
+		config: {},
+		expected: {
+			data: [['a\r\na', 'b'], ['c', 'd'], ['e', 'f'], ['g', 'h'], ['i', 'j']],
+			errors: []
+		}
+	},
+	{
+		description: "Line feed in header inside quotes, with carriage return + line feed endings",
+		input: '"a\na","b"\r\n"c","d"\r\n"e","f"\r\n"g","h"\r\n"i","j"',
+		config: {},
+		expected: {
+			data: [['a\na', 'b'], ['c', 'd'], ['e', 'f'], ['g', 'h'], ['i', 'j']],
+			errors: []
+		}
+	},
+	{
+		description: "Using \\r\\n endings uses \\r\\n linebreak",
+		input: 'a,b\r\nc,d\r\ne,f\r\ng,h\r\ni,j',
+		config: {},
+		expected: {
+			data: [['a', 'b'], ['c', 'd'], ['e', 'f'], ['g', 'h'], ['i', 'j']],
+			errors: [],
+			meta: {
+				linebreak: '\r\n',
+				delimiter: ',',
+				cursor: 23,
+				aborted: false,
+				truncated: false
+			}
+		}
+	},
+	{
+		description: "Using \\n endings uses \\n linebreak",
+		input: 'a,b\nc,d\ne,f\ng,h\ni,j',
+		config: {},
+		expected: {
+			data: [['a', 'b'], ['c', 'd'], ['e', 'f'], ['g', 'h'], ['i', 'j']],
+			errors: [],
+			meta: {
+				linebreak: '\n',
+				delimiter: ',',
+				cursor: 19,
+				aborted: false,
+				truncated: false
+			}
+		}
+	},
+	{
+		description: "Using \\r\\n endings with \\r\\n in header field uses \\r\\n linebreak",
+		input: '"a\r\na",b\r\nc,d\r\ne,f\r\ng,h\r\ni,j',
+		config: {},
+		expected: {
+			data: [['a\r\na', 'b'], ['c', 'd'], ['e', 'f'], ['g', 'h'], ['i', 'j']],
+			errors: [],
+			meta: {
+				linebreak: '\r\n',
+				delimiter: ',',
+				cursor: 28,
+				aborted: false,
+				truncated: false
+			}
+		}
+	},
+	{
+		description: "Using \\r\\n endings with \\n in header field uses \\r\\n linebreak",
+		input: '"a\na",b\r\nc,d\r\ne,f\r\ng,h\r\ni,j',
+		config: {},
+		expected: {
+			data: [['a\na', 'b'], ['c', 'd'], ['e', 'f'], ['g', 'h'], ['i', 'j']],
+			errors: [],
+			meta: {
+				linebreak: '\r\n',
+				delimiter: ',',
+				cursor: 27,
+				aborted: false,
+				truncated: false
+			}
+		}
+	},
+	{
+		description: "Using \\r\\n endings with \\n in header field with skip empty lines uses \\r\\n linebreak",
+		input: '"a\na",b\r\nc,d\r\ne,f\r\ng,h\r\ni,j\r\n',
+		config: {skipEmptyLines: true},
+		expected: {
+			data: [['a\na', 'b'], ['c', 'd'], ['e', 'f'], ['g', 'h'], ['i', 'j']],
+			errors: [],
+			meta: {
+				linebreak: '\r\n',
+				delimiter: ',',
+				cursor: 29,
+				aborted: false,
+				truncated: false
+			}
+		}
+	},
+	{
+		description: "Using \\n endings with \\r\\n in header field uses \\n linebreak",
+		input: '"a\r\na",b\nc,d\ne,f\ng,h\ni,j',
+		config: {},
+		expected: {
+			data: [['a\r\na', 'b'], ['c', 'd'], ['e', 'f'], ['g', 'h'], ['i', 'j']],
+			errors: [],
+			meta: {
+				linebreak: '\n',
+				delimiter: ',',
+				cursor: 24,
+				aborted: false,
+				truncated: false
+			}
+		}
+	},
+	{
+		description: "Using reserved regex character . as quote character",
+		input: '.a\na.,b\r\nc,d\r\ne,f\r\ng,h\r\ni,j',
+		config: { quoteChar: '.' },
+		expected: {
+			data: [['a\na', 'b'], ['c', 'd'], ['e', 'f'], ['g', 'h'], ['i', 'j']],
+			errors: [],
+			meta: {
+				linebreak: '\r\n',
+				delimiter: ',',
+				cursor: 27,
+				aborted: false,
+				truncated: false
+			}
+		}
+	},
+	{
+		description: "Using reserved regex character | as quote character",
+		input: '|a\na|,b\r\nc,d\r\ne,f\r\ng,h\r\ni,j',
+		config: { quoteChar: '|' },
+		expected: {
+			data: [['a\na', 'b'], ['c', 'd'], ['e', 'f'], ['g', 'h'], ['i', 'j']],
+			errors: [],
+			meta: {
+				linebreak: '\r\n',
+				delimiter: ',',
+				cursor: 27,
+				aborted: false,
+				truncated: false
+			}
+		}
+	},
+	{
+		description: "Parsing with skipEmptyLines set to 'greedy'",
+		notes: "Must parse correctly without lines with no content",
+		input: 'a,b\n\n,\nc,d\n , \n""," "\n	,	\n,,,,\n',
+		config: { skipEmptyLines: 'greedy' },
+		expected: {
+			data: [['a', 'b'], ['c', 'd']],
+			errors: []
+		}
+	},
+	{
+		description: "Parsing with skipEmptyLines set to 'greedy' with quotes and delimiters as content",
+		notes: "Must include lines with escaped delimiters and quotes",
+		input: 'a,b\n\n,\nc,d\n" , ",","\n""" """,""""""\n\n\n',
+		config: { skipEmptyLines: 'greedy' },
+		expected: {
+			data: [['a', 'b'], ['c', 'd'], [' , ', ','], ['" "', '""']],
+			errors: []
+		}
 	}
 ];
 
@@ -858,6 +1425,10 @@ describe('Parse Tests', function() {
 	function generateTest(test) {
 		(test.disabled ? it.skip : it)(test.description, function() {
 			var actual = Papa.parse(test.input, test.config);
+			// allows for testing the meta object if present in the test
+			if (test.expected.meta) {
+				assert.deepEqual(actual.meta, test.expected.meta);
+			}
 			assert.deepEqual(JSON.stringify(actual.errors), JSON.stringify(test.expected.errors));
 			assert.deepEqual(actual.data, test.expected.data);
 		});
@@ -885,7 +1456,7 @@ var PARSE_ASYNC_TESTS = [
 	},
 	{
 		description: "Simple download",
-		input: "sample.csv",
+		input: BASE_PATH + "sample.csv",
 		config: {
 			download: true
 		},
@@ -897,7 +1468,7 @@ var PARSE_ASYNC_TESTS = [
 	},
 	{
 		description: "Simple download + worker",
-		input: "tests/sample.csv",
+		input: BASE_PATH + "sample.csv",
 		config: {
 			worker: true,
 			download: true
@@ -1037,7 +1608,13 @@ var UNPARSE_TESTS = [
 		description: "Custom delimiter (ASCII 30)",
 		input: [['a', 'b', 'c'], ['d', 'e', 'f']],
 		config: { delimiter: RECORD_SEP },
-		expected: 'a'+RECORD_SEP+'b'+RECORD_SEP+'c\r\nd'+RECORD_SEP+'e'+RECORD_SEP+'f'
+		expected: 'a' + RECORD_SEP + 'b' + RECORD_SEP + 'c\r\nd' + RECORD_SEP + 'e' + RECORD_SEP + 'f'
+	},
+	{
+		description: "Custom delimiter (Multi-character)",
+		input: [['A', 'b', 'c'], ['d', 'e', 'f']],
+		config: { delimiter: ', ' },
+		expected: 'A, b, c\r\nd, e, f'
 	},
 	{
 		description: "Bad delimiter (\\n)",
@@ -1102,6 +1679,78 @@ var UNPARSE_TESTS = [
 		description: "JSON null is treated as empty value",
 		input: [{ "Col1": "a", "Col2": null, "Col3": "c" }],
 		expected: 'Col1,Col2,Col3\r\na,,c'
+	},
+	{
+		description: "Custom quote character (single quote)",
+		input: [['a,d','b','c']],
+		config: { quoteChar: "'"},
+		expected: "'a,d',b,c"
+	},
+	{
+		description: "Don't print header if header:false option specified",
+		input: [{"Col1": "a", "Col2": "b", "Col3": "c"}, {"Col1": "d", "Col2": "e", "Col3": "f"}],
+		config: {header: false},
+		expected: 'a,b,c\r\nd,e,f'
+	},
+	{
+		description: "Date objects are exported in its ISO representation",
+		input: [{date: new Date("2018-05-04T21:08:03.269Z"), "not a date": 16}, {date: new Date("Tue May 08 2018 08:20:22 GMT-0700 (PDT)"), "not a date": 32}],
+		expected: 'date,not a date\r\n2018-05-04T21:08:03.269Z,16\r\n2018-05-08T15:20:22.000Z,32'
+	},
+	{
+		description: "Returns empty rows when empty rows are passed and skipEmptyLines is false",
+		input: [[null, ' '], [], ['1', '2']],
+		config: {skipEmptyLines: false},
+		expected: '," "\r\n\r\n1,2'
+	},
+	{
+		description: "Returns without empty rows when skipEmptyLines is true",
+		input: [[null, ' '], [], ['1', '2']],
+		config: {skipEmptyLines: true},
+		expected: '," "\r\n1,2'
+	},
+	{
+		description: "Returns without rows with no content when skipEmptyLines is 'greedy'",
+		input: [[null, ' '], [], ['1', '2']],
+		config: {skipEmptyLines: 'greedy'},
+		expected: '1,2'
+	},
+	{
+		description: "Returns empty rows when empty rows are passed and skipEmptyLines is false with headers",
+		input: [{a: null, b: ' '}, {}, {a: '1', b: '2'}],
+		config: {skipEmptyLines: false, header: true},
+		expected: 'a,b\r\n," "\r\n\r\n1,2'
+	},
+	{
+		description: "Returns without empty rows when skipEmptyLines is true with headers",
+		input: [{a: null, b: ' '}, {}, {a: '1', b: '2'}],
+		config: {skipEmptyLines: true, header: true},
+		expected: 'a,b\r\n," "\r\n1,2'
+	},
+	{
+		description: "Returns without rows with no content when skipEmptyLines is 'greedy' with headers",
+		input: [{a: null, b: ' '}, {}, {a: '1', b: '2'}],
+		config: {skipEmptyLines: 'greedy', header: true},
+		expected: 'a,b\r\n1,2'
+	},
+	{
+		description: "Column option used to manually specify keys",
+		notes: "Should not throw any error when attempting to serialize key not present in object. Columns are different than keys of the first object. When an object is missing a key then the serialized value should be an empty string.",
+		input: [{a: 1, b: '2'}, {}, {a: 3, d: 'd', c: 4,}],
+		config: {columns: ['a', 'b', 'c']},
+		expected: 'a,b,c\r\n1,2,\r\n\r\n3,,4'
+	},
+	{
+		description: "Use different escapeChar",
+		input: [{a: 'foo', b: '"quoted"'}],
+		config: {header: false, escapeChar: '\\'},
+		expected: 'foo,"\\"quoted\\""'
+	},
+	{
+		description: "test defeault escapeChar",
+		input: [{a: 'foo', b: '"quoted"'}],
+		config: {header: false},
+		expected: 'foo,"""quoted"""'
 	}
 ];
 
@@ -1160,12 +1809,76 @@ var CUSTOM_TESTS = [
 		}
 	},
 	{
+		description: "Data is correctly parsed with steps",
+		expected: [['A', 'b', 'c'], ['d', 'E', 'f']],
+		run: function(callback) {
+			var data = [];
+			Papa.parse('A,b,c\nd,E,f', {
+				step: function(results) {
+					data.push(results.data);
+				},
+				complete: function() {
+					callback(data);
+				}
+			});
+		}
+	},
+	{
+		description: "Data is correctly parsed with steps (headers)",
+		expected: [{One: 'A', Two: 'b', Three: 'c'}, {One: 'd', Two: 'E', Three: 'f'}],
+		run: function(callback) {
+			var data = [];
+			Papa.parse('One,Two,Three\nA,b,c\nd,E,f', {
+				header: true,
+				step: function(results) {
+					data.push(results.data);
+				},
+				complete: function() {
+					callback(data);
+				}
+			});
+		}
+	},
+	{
+		description: "Data is correctly parsed with steps and worker (headers)",
+		expected: [{One: 'A', Two: 'b', Three: 'c'}, {One: 'd', Two: 'E', Three: 'f'}],
+		run: function(callback) {
+			var data = [];
+			Papa.parse('One,Two,Three\nA,b,c\nd,E,f', {
+				header: true,
+				worker: true,
+				step: function(results) {
+					data.push(results.data);
+				},
+				complete: function() {
+					callback(data);
+				}
+			});
+		}
+	},
+	{
+		description: "Data is correctly parsed with steps and worker",
+		expected: [['A', 'b', 'c'], ['d', 'E', 'f']],
+		run: function(callback) {
+			var data = [];
+			Papa.parse('A,b,c\nd,E,f', {
+				worker: true,
+				step: function(results) {
+					data.push(results.data);
+				},
+				complete: function() {
+					callback(data);
+				}
+			});
+		}
+	},
+	{
 		description: "Step is called with the contents of the row",
 		expected: ['A', 'b', 'c'],
 		run: function(callback) {
 			Papa.parse('A,b,c', {
 				step: function(response) {
-					callback(response.data[0]);
+					callback(response.data);
 				}
 			});
 		}
@@ -1191,7 +1904,7 @@ var CUSTOM_TESTS = [
 		disabled: !XHR_ENABLED,
 		run: function(callback) {
 			var updates = [];
-			Papa.parse("/tests/long-sample.csv", {
+			Papa.parse(BASE_PATH + "long-sample.csv", {
 				download: true,
 				step: function(response) {
 					updates.push(response.meta.cursor);
@@ -1208,7 +1921,7 @@ var CUSTOM_TESTS = [
 		disabled: !XHR_ENABLED,
 		run: function(callback) {
 			var updates = [];
-			Papa.parse("/tests/long-sample.csv", {
+			Papa.parse(BASE_PATH + "long-sample.csv", {
 				download: true,
 				chunkSize: 500,
 				step: function(response) {
@@ -1226,7 +1939,7 @@ var CUSTOM_TESTS = [
 		disabled: !XHR_ENABLED,
 		run: function(callback) {
 			var updates = [];
-			Papa.parse("/tests/long-sample.csv", {
+			Papa.parse(BASE_PATH + "long-sample.csv", {
 				download: true,
 				chunkSize: 500,
 				worker: true,
@@ -1245,7 +1958,7 @@ var CUSTOM_TESTS = [
 		disabled: !XHR_ENABLED,
 		run: function(callback) {
 			var updates = [];
-			Papa.parse("/tests/long-sample.csv", {
+			Papa.parse(BASE_PATH + "long-sample.csv", {
 				download: true,
 				chunkSize: 500,
 				chunk: function(response) {
@@ -1263,13 +1976,82 @@ var CUSTOM_TESTS = [
 		disabled: !XHR_ENABLED,
 		run: function(callback) {
 			var updates = [];
-			Papa.parse("/tests/long-sample.csv", {
+			Papa.parse(BASE_PATH + "long-sample.csv", {
 				download: true,
 				chunkSize: 500,
 				chunk: function(response) {
 					updates.push(response.meta.cursor);
 				},
 				complete: function() {
+					callback(updates);
+				}
+			});
+		}
+	},
+	{
+		description: "Chunk functions can pause parsing",
+		expected: [
+			[['A', 'b', 'c']]
+		],
+		run: function(callback) {
+			var updates = [];
+			Papa.parse('A,b,c\nd,E,f\nG,h,i', {
+				chunkSize: 10,
+				chunk: function(response, handle) {
+					updates.push(response.data);
+					handle.pause();
+					callback(updates);
+				},
+				complete: function() {
+					callback(new Error('incorrect complete callback'));
+				}
+			});
+		}
+	},
+	{
+		description: "Chunk functions can resume parsing",
+		expected: [
+			[['A', 'b', 'c']],
+			[['d', 'E', 'f'], ['G', 'h', 'i']]
+		],
+		run: function(callback) {
+			var updates = [];
+			var handle = null;
+			var first = true;
+			Papa.parse('A,b,c\nd,E,f\nG,h,i', {
+				chunkSize: 10,
+				chunk: function(response, h) {
+					updates.push(response.data);
+					if (!first) return;
+					handle = h;
+					handle.pause();
+					first = false;
+				},
+				complete: function() {
+					callback(updates);
+				}
+			});
+			setTimeout(function() {
+				handle.resume();
+			}, 500);
+		}
+	},
+	{
+		description: "Chunk functions can abort parsing",
+		expected: [
+			[['A', 'b', 'c']]
+		],
+		run: function(callback) {
+			var updates = [];
+			Papa.parse('A,b,c\nd,E,f\nG,h,i', {
+				chunkSize: 1,
+				chunk: function(response, handle) {
+					if (response.data.length) {
+						updates.push(response.data);
+						handle.abort();
+					}
+				},
+				complete: function(response) {
 					callback(updates);
 				}
 			});
@@ -1318,7 +2100,7 @@ var CUSTOM_TESTS = [
 			Papa.parse(new File(['A,B,C\nX,"Y\n1\n2\n3",Z'], 'sample.csv'), {
 				chunkSize: 3,
 				step: function(response) {
-					updates.push(response.data[0]);
+					updates.push(response.data);
 				},
 				complete: function() {
 					callback(updates);
@@ -1333,7 +2115,7 @@ var CUSTOM_TESTS = [
 			var updates = [];
 			Papa.parse('A,b,c\nd,E,f\nG,h,i', {
 				step: function(response, handle) {
-					updates.push(response.data[0]);
+					updates.push(response.data);
 					handle.abort();
 					callback(updates);
 				},
@@ -1345,13 +2127,12 @@ var CUSTOM_TESTS = [
 		description: "Complete is called after aborting",
 		expected: true,
 		run: function(callback) {
-			var updates = [];
 			Papa.parse('A,b,c\nd,E,f\nG,h,i', {
 				step: function(response, handle) {
 					handle.abort();
 				},
 				chunkSize: 6,
-				complete: function (response) {
+				complete: function(response) {
 					callback(response.meta.aborted);
 				}
 			});
@@ -1364,7 +2145,7 @@ var CUSTOM_TESTS = [
 			var updates = [];
 			Papa.parse('A,b,c\nd,E,f\nG,h,i', {
 				step: function(response, handle) {
-					updates.push(response.data[0]);
+					updates.push(response.data);
 					handle.pause();
 					callback(updates);
 				},
@@ -1383,7 +2164,7 @@ var CUSTOM_TESTS = [
 			var first = true;
 			Papa.parse('A,b,c\nd,E,f\nG,h,i', {
 				step: function(response, h) {
-					updates.push(response.data[0]);
+					updates.push(response.data);
 					if (!first) return;
 					handle = h;
 					handle.pause();
@@ -1404,7 +2185,7 @@ var CUSTOM_TESTS = [
 		disabled: !XHR_ENABLED,
 		run: function(callback) {
 			var updates = 0;
-			Papa.parse("/tests/long-sample.csv", {
+			Papa.parse(BASE_PATH + "long-sample.csv", {
 				worker: true,
 				download: true,
 				chunkSize: 500,
@@ -1424,7 +2205,7 @@ var CUSTOM_TESTS = [
 		disabled: !XHR_ENABLED,
 		run: function(callback) {
 			var updates = 0;
-			Papa.parse("/tests/long-sample.csv", {
+			Papa.parse(BASE_PATH + "long-sample.csv", {
 				download: true,
 				chunkSize: 500,
 				beforeFirstChunk: function(chunk) {
@@ -1445,7 +2226,7 @@ var CUSTOM_TESTS = [
 		disabled: !XHR_ENABLED,
 		run: function(callback) {
 			var updates = 0;
-			Papa.parse("/tests/long-sample.csv", {
+			Papa.parse(BASE_PATH + "long-sample.csv", {
 				download: true,
 				chunkSize: 500,
 				beforeFirstChunk: function(chunk) {
@@ -1460,43 +2241,29 @@ var CUSTOM_TESTS = [
 		}
 	},
 	{
-		description: "Should not assume we own the worker unless papaworker is in the search string",
-		disabled: typeof Worker === 'undefined',
-		expected: [false, true, true, true, true],
+		description: "Should correctly guess custom delimiter when passed delimiters to guess.",
+		expected: "~",
 		run: function(callback) {
-			var searchStrings = [
-				'',
-				'?papaworker',
-				'?x=1&papaworker',
-				'?x=1&papaworker&y=1',
-				'?x=1&papaworker=1'
-			];
-			var results = searchStrings.map(function () { return false; });
-			var workers = [];
-
-			// Give it .5s to do something
-			setTimeout(function () {
-				workers.forEach(function (w) { w.terminate(); });
-				callback(results);
-			}, 500);
-
-			searchStrings.forEach(function (searchString, idx) {
-				var w = new Worker('../papaparse.js' + searchString);
-				workers.push(w);
-				w.addEventListener('message', function () {
-					results[idx] = true;
-				});
-				w.postMessage({input: 'a,b,c\n1,2,3'});
+			var results = Papa.parse('"A"~"B"~"C"~"D"', {
+				delimitersToGuess: ['~', '@', '%']
 			});
+			callback(results.meta.delimiter);
+		}
+	},
+	{
+		description: "Should still correctly guess default delimiters when delimiters to guess are not given.",
+		expected: ",",
+		run: function(callback) {
+			var results = Papa.parse('"A","B","C","D"');
+			callback(results.meta.delimiter);
 		}
 	}
-
 ];
 
 describe('Custom Tests', function() {
 	function generateTest(test) {
 		(test.disabled ? it.skip : it)(test.description, function(done) {
-			test.run(function (actual) {
+			test.run(function(actual) {
 				assert.deepEqual(JSON.stringify(actual), JSON.stringify(test.expected));
 				done();
 			});
